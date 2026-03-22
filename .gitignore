@@ -1,4 +1,21 @@
+# Environment
 .env
-venv/
+env/
+
+# Model files
+ser_model/
+reward_model/reward_model_output/
+ser_training/model_output/
+
+# Data
+ser_training/data/
+chroma_db/
+uploads/
+
+# Temp audio files
+*.wav
+*.webm
+
+# Python
 __pycache__/
 *.pyc

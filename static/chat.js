@@ -1,6 +1,7 @@
 // ========== State ==========
 let currentUser = null;
 let isSignupMode = false;
+let lastUserQuery = ''; // Track last query for feedback attachment
 
 // ========== DOM Elements ==========
 const authContainer = document.getElementById('authContainer');
@@ -40,6 +41,66 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// ========== RLHF Feedback ==========
+function renderFeedback(messageId, query, response, container) {
+    // Don't add feedback bar if no messageId (e.g. history messages)
+    if (!messageId) return;
+
+    const bar = document.createElement('div');
+    bar.className = 'feedback-bar';
+
+    const thumbUp = document.createElement('button');
+    thumbUp.className = 'feedback-btn';
+    thumbUp.textContent = '👍';
+    thumbUp.title = 'Good response';
+
+    const thumbDown = document.createElement('button');
+    thumbDown.className = 'feedback-btn';
+    thumbDown.textContent = '👎';
+    thumbDown.title = 'Bad response';
+
+    const thanks = document.createElement('span');
+    thanks.className = 'feedback-thanks';
+    thanks.style.display = 'none';
+    thanks.textContent = 'Thanks for your feedback!';
+
+    bar.appendChild(thumbUp);
+    bar.appendChild(thumbDown);
+    bar.appendChild(thanks);
+    container.appendChild(bar);
+
+    async function submitFeedback(rating) {
+        thumbUp.disabled = true;
+        thumbDown.disabled = true;
+
+        if (rating === 1) thumbUp.classList.add('selected-up');
+        else thumbDown.classList.add('selected-down');
+
+        thanks.style.display = 'inline';
+
+        try {
+            const res = await fetch('/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message_id: messageId,
+                    query: query,
+                    response: response,
+                    rating: rating,
+                }),
+            });
+            if (!res.ok) {
+                thanks.textContent = 'Could not save feedback.';
+            }
+        } catch (err) {
+            thanks.textContent = 'Could not save feedback.';
+        }
+    }
+
+    thumbUp.addEventListener('click', () => submitFeedback(1));
+    thumbDown.addEventListener('click', () => submitFeedback(0));
 }
 
 // ========== Auth Functions ==========
@@ -139,7 +200,7 @@ signupForm.addEventListener('submit', async (e) => {
         if (res.ok) {
             showSuccess('Account created! Please sign in.');
             setTimeout(() => {
-                toggleLink.click(); // Switch to sign in form
+                toggleLink.click();
             }, 1500);
         } else {
             showError(data.error || 'Sign up failed');
@@ -159,42 +220,56 @@ async function signOut() {
         console.error('Sign out error:', err);
     }
 }
-// ========== Voice to Text (Web Speech API) ==========
 
-const voiceBtn = document.getElementById('voiceBtn');
+// ========== Voice Recording ==========
+const voiceBtn = document.getElementById("voiceBtn");
 
-let recognition;
-if ('webkitSpeechRecognition' in window) {
-    recognition = new webkitSpeechRecognition();
-    recognition.lang = "en-US";
-    recognition.continuous = false;
-    recognition.interimResults = false;
+let mediaRecorder;
+let audioChunks = [];
 
-    recognition.onstart = () => {
-        voiceBtn.classList.add("listening");
-        voiceBtn.textContent = "🎙️ Listening...";
-    };
+voiceBtn.addEventListener("click", async () => {
 
-    recognition.onend = () => {
-        voiceBtn.classList.remove("listening");
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.start();
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        voiceBtn.textContent = "⏹ Stop";
+
+    } else {
+
+        mediaRecorder.stop();
         voiceBtn.textContent = "🎤";
-    };
 
-    recognition.onresult = (event) => {
-        const speechText = event.results[0][0].transcript;
-        console.log("Voice Input:", speechText);
+        mediaRecorder.onstop = async () => {
 
-        // Fill into query box
-        queryInput.value = speechText;
+            const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "voice.webm");
 
-        // Auto-send the message
-        sendMessage();
-    };
-}
+            const res = await fetch("/voice_chat", {
+                method: "POST",
+                body: formData
+            });
 
-voiceBtn.addEventListener("click", () => {
-    if (recognition) recognition.start();
-    else alert("Your browser does not support voice input.");
+            const data = await res.json();
+
+            if (res.ok) {
+                appendMessage("user", data.transcribed_text);
+                // Pass message_id and transcribed text for feedback
+                appendMessage("bot", data.response, data.message_id, data.transcribed_text);
+            } else {
+                appendMessage("bot", "❌ Voice processing failed.");
+            }
+        };
+    }
 });
 
 // ========== Chat Functions ==========
@@ -206,6 +281,7 @@ async function loadChatHistory() {
         if (data.history && data.history.length > 0) {
             messagesDiv.innerHTML = '';
             data.history.forEach(msg => {
+                // History messages don't have message_id — no feedback bar
                 appendMessage(msg.role, msg.message);
             });
         }
@@ -214,18 +290,26 @@ async function loadChatHistory() {
     }
 }
 
-function appendMessage(role, text) {
+// Updated appendMessage — accepts optional messageId and query for feedback
+function appendMessage(role, text, messageId = null, query = null) {
     const emptyState = messagesDiv.querySelector('.empty-state');
     if (emptyState) emptyState.remove();
-    
+
     const msgDiv = document.createElement('div');
     msgDiv.className = `msg ${role}`;
-    
+
     const contentDiv = document.createElement('div');
     contentDiv.className = 'msg-content';
     contentDiv.innerHTML = `<strong>${role === 'user' ? 'You' : 'Bot'}:</strong> ${escapeHtml(text)}`;
-    
+
     msgDiv.appendChild(contentDiv);
+
+    // Add feedback bar below bot messages when messageId is present
+    if (role === 'bot' && messageId) {
+        const feedbackQuery = query || lastUserQuery;
+        renderFeedback(messageId, feedbackQuery, text, msgDiv);
+    }
+
     messagesDiv.appendChild(msgDiv);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
@@ -234,6 +318,7 @@ async function sendMessage() {
     const query = queryInput.value.trim();
     if (!query) return;
 
+    lastUserQuery = query; // Store for feedback reference
     appendMessage('user', query);
     queryInput.value = '';
 
@@ -254,7 +339,8 @@ async function sendMessage() {
         typing.remove();
         
         if (res.ok) {
-            appendMessage('bot', data.response);
+            // Pass message_id and original query for feedback
+            appendMessage('bot', data.response, data.message_id, query);
         } else {
             appendMessage('bot', `❌ Error: ${data.error || 'Unknown error'}`);
         }
@@ -317,7 +403,5 @@ uploadForm.addEventListener('submit', async (e) => {
 
 // ========== Initialize ==========
 checkAuth();
-
-
 
 

@@ -247,6 +247,7 @@
 
         .msg {
             display: flex;
+            flex-direction: column;  /* changed to column to stack bubble + feedback */
             animation: slideIn 0.3s ease;
         }
 
@@ -262,11 +263,11 @@
         }
 
         .msg.user {
-            justify-content: flex-end;
+            align-items: flex-end;
         }
 
         .msg.bot {
-            justify-content: flex-start;
+            align-items: flex-start;
         }
 
         .msg-content {
@@ -287,6 +288,59 @@
             color: #e0e0e0;
             border-bottom-left-radius: 5px;
         }
+
+        /* ── RLHF Feedback Bar ── */
+        .feedback-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 5px;
+            margin-left: 4px;
+            opacity: 0.65;
+            transition: opacity 0.2s;
+        }
+
+        .feedback-bar:hover {
+            opacity: 1;
+        }
+
+        .feedback-btn {
+            background: none;
+            border: 1px solid #3a3a55;
+            border-radius: 6px;
+            padding: 2px 9px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #a0a0b0;
+            transition: background 0.15s, border-color 0.15s;
+            line-height: 1.5;
+        }
+
+        .feedback-btn:hover {
+            background: #2a2a40;
+            border-color: #667eea;
+        }
+
+        .feedback-btn:disabled {
+            cursor: default;
+        }
+
+        .feedback-btn.selected-up {
+            background: rgba(68, 200, 100, 0.15);
+            border-color: #44c864;
+        }
+
+        .feedback-btn.selected-down {
+            background: rgba(220, 80, 80, 0.15);
+            border-color: #dc5050;
+        }
+
+        .feedback-thanks {
+            font-size: 11px;
+            color: #667eea;
+            font-style: italic;
+        }
+        /* ── end feedback ── */
 
         #inputSection {
             background: #16213e;
@@ -335,7 +389,7 @@
         .hidden {
             display: none !important;
         }
-   
+
         .voice-button {
             margin-left: 10px;
             padding: 8px 12px;
@@ -346,14 +400,14 @@
             font-size: 18px;
             transition: all 0.2s ease;
         }
+
         .voice-button.listening {
             background: #ffdddd;
         }
-
-
     </style>
 </head>
 <body>
+
 <!-- Auth Container -->
 <div id="authContainer">
     <h2 id="authTitle">Sign In</h2>
@@ -442,14 +496,3 @@
 <script src="/static/chat.js"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
